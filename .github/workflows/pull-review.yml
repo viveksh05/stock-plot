@@ -1,0 +1,65 @@
+# This workflow will perform code analysis to 
+# confirm if the pull requests can be merged
+#
+#
+
+name: Pull Request Review
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+    branches: [ "main" ]
+
+jobs:
+  # Perform linting on code
+  linting:
+
+    name: Linting
+    uses: shar1084/stockplot/.github/workflows/lint.yml@main
+
+  buildtest:
+  
+    name: Build and Unit Tests
+    needs:
+       - linting
+    uses: shar1084/stockplot/.github/workflows/build.yml@main
+
+  githubas:
+
+    name: CodeQL
+    needs:
+       - buildtest
+    uses: shar1084/stockplot/.github/workflows/codeql.yml@main
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+  githubas-dependrv:
+
+    name: DepedencyReview
+    needs:
+       - buildtest
+    uses: shar1084/stockplot/.github/workflows/dependency-review.yml@main
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+  externalsast:
+
+    name: SAST
+    needs:
+       - githubas
+    uses: shar1084/stockplot/.github/workflows/external-sast.yml@main
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    
