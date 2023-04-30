@@ -1,0 +1,110 @@
+# This workflow will perform External SAST analysis on pull request
+#
+#
+
+name: ExternalSAST
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+
+jobs:
+
+  veracode:
+    # The type of runner that the job will run on
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+    runs-on: ubuntu-latest
+    name: Veracode Analysis
+    steps:
+
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it and copies all sources into ZIP file for submitting for analysis. Replace this section with your applications build steps
+    - uses: actions/checkout@v3
+      with:
+        repository: ''
+
+    - run: zip -r veracode-scan-target.zip ./
+
+    # download the Veracode Static Analysis Pipeline scan jar
+    - run: curl --silent --show-error --fail -O https://downloads.veracode.com/securityscan/pipeline-scan-LATEST.zip
+    - run: unzip -o pipeline-scan-LATEST.zip
+
+    - uses: actions/setup-java@v3
+      with:
+        java-version: 8
+        distribution: 'temurin'
+    - run: java -jar pipeline-scan.jar --veracode_api_id "${{secrets.VERACODE_API_ID}}" --veracode_api_key "${{secrets.VERACODE_API_KEY}}" --fail_on_severity="Very High, High" --file veracode-scan-target.zip
+      continue-on-error: true
+    - name: Convert pipeline scan output to SARIF format
+      id: convert
+      uses: veracode/veracode-pipeline-scan-results-to-sarif@ff08ae5b45d5384cb4679932f184c013d34da9be
+      with:
+        pipeline-results-json: results.json
+    - uses: github/codeql-action/upload-sarif@v2
+      with:
+        # Path to SARIF file relative to the root of the repository
+        sarif_file: veracode-results.sarif
+
+  synopsys:
+    name: Synopsys Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Synopsys Intelligent Security Scan
+      id: prescription
+      uses: synopsys-sig/intelligent-security-scan@48eedfcd42bc342a294dc495ac452797b2d9ff08
+      with:
+        ioServerUrl: ${{secrets.IO_SERVER_URL}}
+        ioServerToken: ${{secrets.IO_SERVER_TOKEN}}
+        workflowServerUrl: ${{secrets.WORKFLOW_SERVER_URL}}
+        additionalWorkflowArgs: --polaris.url=${{secrets.POLARIS_SERVER_URL}} --polaris.token=${{secrets.POLARIS_ACCESS_TOKEN}}
+        stage: "IO"
+
+    # Please note that the ID in previous step was set to prescription
+    # in order for this logic to work also make sure that POLARIS_ACCESS_TOKEN
+    # is defined in settings
+    - name: Static Analysis with Polaris
+      if: ${{steps.prescription.outputs.sastScan == 'true' }}
+      run: |
+          export POLARIS_SERVER_URL=${{ secrets.POLARIS_SERVER_URL}}
+          export POLARIS_ACCESS_TOKEN=${{ secrets.POLARIS_ACCESS_TOKEN}}
+          wget -q ${{ secrets.POLARIS_SERVER_URL}}/api/tools/polaris_cli-linux64.zip
+          unzip -j polaris_cli-linux64.zip -d /tmp
+          /tmp/polaris analyze -w
+
+    # Please note that the ID in previous step was set to prescription
+    # in order for this logic to work
+    - name: Software Composition Analysis with Black Duck
+      if: ${{steps.prescription.outputs.scaScan == 'true' }}
+      uses: blackducksoftware/github-action@9ea442b34409737f64743781e9adc71fd8e17d38
+      with:
+         args: '--blackduck.url="${{ secrets.BLACKDUCK_URL}}" --blackduck.api.token="${{ secrets.BLACKDUCK_TOKEN}}" --detect.tools="SIGNATURE_SCAN,DETECTOR"'
+
+    - name: Synopsys Intelligent Security Scan
+      if: ${{ steps.prescription.outputs.sastScan == 'true' || steps.prescription.outputs.scaScan == 'true' }}
+      uses: synopsys-sig/intelligent-security-scan@48eedfcd42bc342a294dc495ac452797b2d9ff08
+      with:
+        ioServerUrl: ${{secrets.IO_SERVER_URL}}
+        ioServerToken: ${{secrets.IO_SERVER_TOKEN}}
+        workflowServerUrl: ${{secrets.WORKFLOW_SERVER_URL}}
+        additionalWorkflowArgs: --IS_SAST_ENABLED=${{steps.prescription.outputs.sastScan}} --IS_SCA_ENABLED=${{steps.prescription.outputs.scaScan}}
+                --polaris.project.name={{PROJECT_NAME}} --polaris.url=${{secrets.POLARIS_SERVER_URL}} --polaris.token=${{secrets.POLARIS_ACCESS_TOKEN}}
+                --blackduck.project.name={{PROJECT_NAME}}:{{PROJECT_VERSION}} --blackduck.url=${{secrets.BLACKDUCK_URL}} --blackduck.api.token=${{secrets.BLACKDUCK_TOKEN}}
+        stage: "WORKFLOW"
+
+    - name: Upload SARIF file
+      if: ${{steps.prescription.outputs.sastScan == 'true' }}
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        # Path to SARIF file relative to the root of the repository
+        sarif_file: workflowengine-results.sarif.json
