@@ -1,0 +1,12 @@
+name: call adhoc
+on: 
+  push:
+    branches:
+      main
+
+jobs:
+  call:
+    uses: viveksh05/stock-plot/.github/workflows/adhoc-workflows@main
+    with:
+      lang: "java"
+      btool: "gradle"
