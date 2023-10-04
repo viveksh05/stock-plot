@@ -1,0 +1,23 @@
+name: adhoc workflow tests
+on: [push]
+  inputs:
+    lang:
+      description: 
+      required: true
+      type: string
+    btool:
+      description: 
+      required: true
+      type: string
+
+jobs:
+  adhoc-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      -name: Run java maven
+       if ${{inputs.lang}} == "java" && $${{inputs.btool}} == "maven"
+       run: | echo "maven"
+
+      -name: Run java gradle
+       if ${{inputs.lang}} == "java" && $${{inputs.btool}} == "gradle"
+       run: | echo "gradle"
