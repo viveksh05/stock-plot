@@ -6,7 +6,7 @@ on:
 
 jobs:
   call:
-    uses: viveksh05/stock-plot/.github/workflows/adhoc-workflows@main
+    uses: viveksh05/stock-plot/.github/workflows/adhoc-workflows.yml@main
     with:
       lang: "java"
       btool: "gradle"
